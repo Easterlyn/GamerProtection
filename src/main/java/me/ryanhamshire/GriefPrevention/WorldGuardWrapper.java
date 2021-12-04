@@ -1,5 +1,6 @@
 package me.ryanhamshire.GriefPrevention;
 
+import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.world.World;
 import com.sk89q.worldguard.WorldGuard;
@@ -8,6 +9,7 @@ import com.sk89q.worldguard.bukkit.WorldGuardPlugin;
 import com.sk89q.worldguard.internal.platform.WorldGuardPlatform;
 import com.sk89q.worldguard.protection.ApplicableRegionSet;
 import com.sk89q.worldguard.protection.flags.Flags;
+import com.sk89q.worldguard.protection.flags.StateFlag;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
@@ -16,7 +18,7 @@ import org.bukkit.entity.Player;
 
 class WorldGuardWrapper
 {
-    private WorldGuardPlugin worldGuard = null;
+    private WorldGuardPlugin worldGuard;
 
     public WorldGuardWrapper() throws ClassNotFoundException
     {
@@ -29,7 +31,7 @@ class WorldGuardWrapper
         {
             BukkitPlayer localPlayer = new BukkitPlayer(this.worldGuard, creatingPlayer);
             WorldGuardPlatform platform = WorldGuard.getInstance().getPlatform();
-            World world = platform.getMatcher().getWorldByName(lesserCorner.getWorld().getName());
+            World world = BukkitAdapter.adapt(lesserCorner.getWorld());
 
             if (platform.getSessionManager().hasBypass(localPlayer, world)) return true;
 
@@ -42,15 +44,7 @@ class WorldGuardWrapper
                         BlockVector3.at(lesserCorner.getX(), 0, lesserCorner.getZ()),
                         BlockVector3.at(greaterCorner.getX(), world.getMaxY(), greaterCorner.getZ()));
 
-                ApplicableRegionSet overlaps = manager.getApplicableRegions(tempRegion);
-                for (ProtectedRegion r : overlaps.getRegions())
-                {
-                    if (!manager.getApplicableRegions(r).testState(localPlayer, Flags.BUILD))
-                    {
-                        return false;
-                    }
-                }
-                return true;
+                return manager.getApplicableRegions(tempRegion).queryState(localPlayer, Flags.BUILD) == StateFlag.State.ALLOW;
             }
 
             return true;
