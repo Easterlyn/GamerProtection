@@ -7,22 +7,20 @@ import com.sk89q.worldguard.WorldGuard;
 import com.sk89q.worldguard.bukkit.BukkitPlayer;
 import com.sk89q.worldguard.bukkit.WorldGuardPlugin;
 import com.sk89q.worldguard.internal.platform.WorldGuardPlatform;
-import com.sk89q.worldguard.protection.ApplicableRegionSet;
 import com.sk89q.worldguard.protection.flags.Flags;
 import com.sk89q.worldguard.protection.flags.StateFlag;
 import com.sk89q.worldguard.protection.managers.RegionManager;
 import com.sk89q.worldguard.protection.regions.ProtectedCuboidRegion;
-import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
 class WorldGuardWrapper
 {
-    private WorldGuardPlugin worldGuard;
+    private final WorldGuardPlugin worldGuard;
 
     public WorldGuardWrapper() throws ClassNotFoundException
     {
-        this.worldGuard = (WorldGuardPlugin) GriefPrevention.instance.getServer().getPluginManager().getPlugin("WorldGuard");
+        this.worldGuard = WorldGuardPlugin.inst();
     }
 
     public boolean canBuild(Location lesserCorner, Location greaterCorner, Player creatingPlayer)
@@ -31,7 +29,13 @@ class WorldGuardWrapper
         {
             BukkitPlayer localPlayer = new BukkitPlayer(this.worldGuard, creatingPlayer);
             WorldGuardPlatform platform = WorldGuard.getInstance().getPlatform();
-            World world = BukkitAdapter.adapt(lesserCorner.getWorld());
+            org.bukkit.World bukkitWorld = lesserCorner.getWorld();
+
+            if (bukkitWorld == null) {
+                return true;
+            }
+
+            World world = BukkitAdapter.adapt(bukkitWorld);
 
             if (platform.getSessionManager().hasBypass(localPlayer, world)) return true;
 
