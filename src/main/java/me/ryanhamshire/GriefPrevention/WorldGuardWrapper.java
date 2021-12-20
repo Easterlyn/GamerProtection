@@ -3,8 +3,8 @@ package me.ryanhamshire.GriefPrevention;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.world.World;
+import com.sk89q.worldguard.LocalPlayer;
 import com.sk89q.worldguard.WorldGuard;
-import com.sk89q.worldguard.bukkit.BukkitPlayer;
 import com.sk89q.worldguard.bukkit.WorldGuardPlugin;
 import com.sk89q.worldguard.internal.platform.WorldGuardPlatform;
 import com.sk89q.worldguard.protection.flags.Flags;
@@ -18,7 +18,7 @@ class WorldGuardWrapper
 {
     private final WorldGuardPlugin worldGuard;
 
-    public WorldGuardWrapper() throws ClassNotFoundException
+    public WorldGuardWrapper() throws IllegalArgumentException, IllegalStateException, ClassCastException
     {
         this.worldGuard = WorldGuardPlugin.inst();
     }
@@ -27,31 +27,32 @@ class WorldGuardWrapper
     {
         try
         {
-            BukkitPlayer localPlayer = new BukkitPlayer(this.worldGuard, creatingPlayer);
-            WorldGuardPlatform platform = WorldGuard.getInstance().getPlatform();
-            org.bukkit.World bukkitWorld = lesserCorner.getWorld();
-
-            if (bukkitWorld == null) {
+            if (lesserCorner.getWorld() == null)
+            {
                 return true;
             }
 
-            World world = BukkitAdapter.adapt(bukkitWorld);
+            LocalPlayer localPlayer = this.worldGuard.wrapPlayer(creatingPlayer);
+            WorldGuardPlatform platform = WorldGuard.getInstance().getPlatform();
+            World world = BukkitAdapter.adapt(lesserCorner.getWorld());
 
-            if (platform.getSessionManager().hasBypass(localPlayer, world)) return true;
-
-            RegionManager manager = platform.getRegionContainer().get(world);
-
-            if (manager != null)
+            if (platform.getSessionManager().hasBypass(localPlayer, world))
             {
-                ProtectedCuboidRegion tempRegion = new ProtectedCuboidRegion(
-                        "GP_TEMP",
-                        BlockVector3.at(lesserCorner.getX(), 0, lesserCorner.getZ()),
-                        BlockVector3.at(greaterCorner.getX(), world.getMaxY(), greaterCorner.getZ()));
-
-                return manager.getApplicableRegions(tempRegion).queryState(localPlayer, Flags.BUILD) == StateFlag.State.ALLOW;
+                return true;
             }
 
-            return true;
+            RegionManager manager = platform.getRegionContainer().get(world);
+            if (manager == null)
+            {
+                return true;
+            }
+
+            ProtectedCuboidRegion tempRegion = new ProtectedCuboidRegion(
+                    "GP_TEMP",
+                    BlockVector3.at(lesserCorner.getX(), 0, lesserCorner.getZ()),
+                    BlockVector3.at(greaterCorner.getX(), world.getMaxY(), greaterCorner.getZ()));
+
+            return manager.getApplicableRegions(tempRegion).queryState(localPlayer, Flags.BUILD) == StateFlag.State.ALLOW;
         }
         catch (Throwable rock)
         {
@@ -60,8 +61,8 @@ class WorldGuardWrapper
                     "Consider updating/downgrading/removing WorldGuard or disable WorldGuard integration in GP's config " +
                     "(CreationRequiresWorldGuardBuildPermission). If you're going to report this please be kind because " +
                     "WorldEdit's API hasn't been :c", CustomLogEntryTypes.Debug, false);
-            return true;
         }
 
+        return true;
     }
 }
