@@ -122,9 +122,9 @@ public class GriefPrevention extends JavaPlugin
     public int config_claims_accruedIdleThreshold;                    //how far (in blocks) a player must move in order to not be considered afk/idle when determining accrued claim blocks
     public int config_claims_accruedIdlePercent;                    //how much percentage of claim block accruals should idle players get
     public int config_claims_maxDepth;                                //limit on how deep claims can go
-    public int config_claims_expirationDays;                        //how many days of inactivity before a player loses his claims
-    public int config_claims_expirationExemptionTotalBlocks;        //total claim blocks amount which will exempt a player from claim expiration
-    public int config_claims_expirationExemptionBonusBlocks;        //bonus claim blocks amount which will exempt a player from claim expiration
+    public int config_claims_expirationDays = -1;                        //how many days of inactivity before a player loses his claims
+    public int config_claims_expirationExemptionTotalBlocks = -1;        //total claim blocks amount which will exempt a player from claim expiration
+    public int config_claims_expirationExemptionBonusBlocks = -1;        //bonus claim blocks amount which will exempt a player from claim expiration
 
     public int config_claims_automaticClaimsForNewPlayersRadius;    //how big automatic new player claims (when they place a chest) should be.  -1 to disable
     public int config_claims_automaticClaimsForNewPlayersRadiusMin; //how big automatic new player claims must be. 0 to disable
@@ -132,9 +132,9 @@ public class GriefPrevention extends JavaPlugin
     public int config_claims_minWidth;                                //minimum width for non-admin claims
     public int config_claims_minArea;                               //minimum area for non-admin claims
 
-    public int config_claims_chestClaimExpirationDays;                //number of days of inactivity before an automatic chest claim will be deleted
-    public int config_claims_unusedClaimExpirationDays;                //number of days of inactivity before an unused (nothing build) claim will be deleted
-    public boolean config_claims_survivalAutoNatureRestoration;        //whether survival claims will be automatically restored to nature when auto-deleted
+    public int config_claims_chestClaimExpirationDays = -1;                //number of days of inactivity before an automatic chest claim will be deleted
+    public int config_claims_unusedClaimExpirationDays = -1;                //number of days of inactivity before an unused (nothing build) claim will be deleted
+    public boolean config_claims_survivalAutoNatureRestoration;        //whether survival claims will be automatically restored to nature
     public boolean config_claims_allowTrappedInAdminClaims;            //whether it should be allowed to use /trapped in adminclaims.
 
     public Material config_claims_investigationTool;                //which material will be used to investigate claims with a right click
@@ -222,7 +222,7 @@ public class GriefPrevention extends JavaPlugin
     public boolean config_pistonExplosionSound;                     //whether pistons make an explosion sound when they get removed
 
     public boolean config_advanced_fixNegativeClaimblockAmounts;    //whether to attempt to fix negative claim block amounts (some addons cause/assume players can go into negative amounts)
-    public int config_advanced_claim_expiration_check_rate;            //How often GP should check for expired claims, amount in seconds
+    public int config_advanced_claim_expiration_check_rate = -1;            //How often GP should check for expired claims, amount in seconds
     public int config_advanced_offlineplayer_cache_days;            //Cache players who have logged in within the last x number of days
 
     //custom log settings
@@ -349,10 +349,6 @@ public class GriefPrevention extends JavaPlugin
         //start the recurring cleanup event for entities in creative worlds
         EntityCleanupTask task = new EntityCleanupTask(0);
         this.getServer().getScheduler().scheduleSyncDelayedTask(GriefPrevention.instance, task, 20L * 60 * 2);
-
-        //start recurring cleanup scan for unused claims belonging to inactive players
-        FindUnusedClaimsTask task2 = new FindUnusedClaimsTask();
-        this.getServer().getScheduler().scheduleSyncRepeatingTask(this, task2, 20L * 60, 20L * config_advanced_claim_expiration_check_rate);
 
         //register for events
         PluginManager pluginManager = this.getServer().getPluginManager();
@@ -561,9 +557,12 @@ public class GriefPrevention extends JavaPlugin
         this.config_claims_maxDepth = config.getInt("GriefPrevention.Claims.MaximumDepth", Integer.MIN_VALUE);
         this.config_claims_chestClaimExpirationDays = config.getInt("GriefPrevention.Claims.Expiration.ChestClaimDays", 7);
         this.config_claims_unusedClaimExpirationDays = config.getInt("GriefPrevention.Claims.Expiration.UnusedClaimDays", 14);
-        this.config_claims_expirationDays = config.getInt("GriefPrevention.Claims.Expiration.AllClaims.DaysInactive", 60);
-        this.config_claims_expirationExemptionTotalBlocks = config.getInt("GriefPrevention.Claims.Expiration.AllClaims.ExceptWhenOwnerHasTotalClaimBlocks", 10000);
-        this.config_claims_expirationExemptionBonusBlocks = config.getInt("GriefPrevention.Claims.Expiration.AllClaims.ExceptWhenOwnerHasBonusClaimBlocks", 5000);
+        if (config.isConfigurationSection("GriefPrevention.Claims.Expiration"))
+        {
+            getLogger().severe("GamerProtection does not handle claim expiration.");
+            getLogger().severe("Please use GPClaimExpiration to expire claims of inactive players.");
+            getLogger().severe("Downloads: https://github.com/GPAddons/GPClaimExpiration/releases");
+        }
         this.config_claims_survivalAutoNatureRestoration = config.getBoolean("GriefPrevention.Claims.Expiration.AutomaticNatureRestoration.SurvivalWorlds", false);
         this.config_claims_allowTrappedInAdminClaims = config.getBoolean("GriefPrevention.Claims.AllowTrappedInAdminClaims", false);
 
@@ -760,7 +759,6 @@ public class GriefPrevention extends JavaPlugin
         this.databasePassword = config.getString("GriefPrevention.Database.Password", "");
 
         this.config_advanced_fixNegativeClaimblockAmounts = config.getBoolean("GriefPrevention.Advanced.fixNegativeClaimblockAmounts", true);
-        this.config_advanced_claim_expiration_check_rate = config.getInt("GriefPrevention.Advanced.ClaimExpirationCheckRate", 60);
         this.config_advanced_offlineplayer_cache_days = config.getInt("GriefPrevention.Advanced.OfflinePlayer_cache_days", 90);
 
         //custom logger settings
@@ -806,12 +804,7 @@ public class GriefPrevention extends JavaPlugin
         outConfig.set("GriefPrevention.Claims.MaximumDepth", this.config_claims_maxDepth);
         outConfig.set("GriefPrevention.Claims.InvestigationTool", this.config_claims_investigationTool.name());
         outConfig.set("GriefPrevention.Claims.ModificationTool", this.config_claims_modificationTool.name());
-        outConfig.set("GriefPrevention.Claims.Expiration.ChestClaimDays", this.config_claims_chestClaimExpirationDays);
-        outConfig.set("GriefPrevention.Claims.Expiration.UnusedClaimDays", this.config_claims_unusedClaimExpirationDays);
-        outConfig.set("GriefPrevention.Claims.Expiration.AllClaims.DaysInactive", this.config_claims_expirationDays);
-        outConfig.set("GriefPrevention.Claims.Expiration.AllClaims.ExceptWhenOwnerHasTotalClaimBlocks", this.config_claims_expirationExemptionTotalBlocks);
-        outConfig.set("GriefPrevention.Claims.Expiration.AllClaims.ExceptWhenOwnerHasBonusClaimBlocks", this.config_claims_expirationExemptionBonusBlocks);
-        outConfig.set("GriefPrevention.Claims.Expiration.AutomaticNatureRestoration.SurvivalWorlds", this.config_claims_survivalAutoNatureRestoration);
+        outConfig.set("GriefPrevention.Claims.Expiration", null);
         outConfig.set("GriefPrevention.Claims.AllowTrappedInAdminClaims", this.config_claims_allowTrappedInAdminClaims);
         outConfig.set("GriefPrevention.Claims.MaximumNumberOfClaimsPerPlayer", this.config_claims_maxClaimsPerPlayer);
         outConfig.set("GriefPrevention.Claims.CreationRequiresWorldGuardBuildPermission", this.config_claims_respectWorldGuard);
@@ -902,7 +895,7 @@ public class GriefPrevention extends JavaPlugin
         outConfig.set("GriefPrevention.BanCommandPattern", this.config_ban_commandFormat);
 
         outConfig.set("GriefPrevention.Advanced.fixNegativeClaimblockAmounts", this.config_advanced_fixNegativeClaimblockAmounts);
-        outConfig.set("GriefPrevention.Advanced.ClaimExpirationCheckRate", this.config_advanced_claim_expiration_check_rate);
+        outConfig.set("GriefPrevention.Advanced.ClaimExpirationCheckRate", null);
         outConfig.set("GriefPrevention.Advanced.OfflinePlayer_cache_days", this.config_advanced_offlineplayer_cache_days);
 
         //custom logger settings
