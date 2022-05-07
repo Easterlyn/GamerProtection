@@ -21,6 +21,7 @@ package me.ryanhamshire.GriefPrevention;
 import com.google.common.io.Files;
 import com.griefprevention.visualization.BoundaryVisualization;
 import com.griefprevention.visualization.VisualizationType;
+import me.ryanhamshire.GriefPrevention.events.ClaimModifiedEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimResizeEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimCreatedEvent;
 import me.ryanhamshire.GriefPrevention.events.ClaimDeletedEvent;
@@ -1447,6 +1448,10 @@ public abstract class DataStore
 
         //return here if event is cancelled
         if (event.isCancelled()) return;
+
+        ClaimModifiedEvent legacyEvent = new ClaimModifiedEvent(oldClaim, newClaim, player);
+        Bukkit.getPluginManager().callEvent(legacyEvent);
+        if (legacyEvent.isCancelled()) return;
 
         //special rule for making a top-level claim smaller.  to check this, verifying the old claim's corners are inside the new claim's boundaries.
         //rule: in any mode, shrinking a claim removes any surface fluids
