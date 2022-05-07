@@ -4,7 +4,7 @@
 
     <groupId>com.easterlyn</groupId>
     <artifactId>gamerprotection</artifactId>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>1.1.0</version>
 
     <name>GamerProtection</name>
     <description>Gamers gaming gladly grief-less.</description>
