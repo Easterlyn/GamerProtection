@@ -821,39 +821,47 @@ public class BlockEventHandler implements Listener
         }
     }
 
-    //fire doesn't spread unless configured to, but other blocks still do (mushrooms and vines, for example)
     @EventHandler(priority = EventPriority.LOWEST)
-    public void onBlockSpread(BlockSpreadEvent spreadEvent)
+    public void onBlockSpread(@NotNull BlockSpreadEvent spreadEvent)
     {
-        if (spreadEvent.getSource().getType() != Material.FIRE) return;
 
-        //don't track in worlds where claims are not enabled
+        // Don't track in worlds where claims are not enabled.
         if (!GriefPrevention.instance.claimsEnabledForWorld(spreadEvent.getBlock().getWorld())) return;
 
-        if (!GriefPrevention.instance.config_fireSpreads)
+        if (Tag.FIRE.isTagged(spreadEvent.getSource().getType()))
         {
-            spreadEvent.setCancelled(true);
-
-            Block underBlock = spreadEvent.getSource().getRelative(BlockFace.DOWN);
-            if (underBlock.getType() != Material.NETHERRACK)
+            if (!GriefPrevention.instance.config_fireSpreads)
             {
-                spreadEvent.getSource().setType(Material.AIR);
+                spreadEvent.setCancelled(true);
+
+                Block underBlock = spreadEvent.getSource().getRelative(BlockFace.DOWN);
+                Tag<Material> infiniburn = switch (spreadEvent.getBlock().getWorld().getEnvironment())
+                {
+                    case NORMAL, CUSTOM -> Tag.INFINIBURN_OVERWORLD;
+                    case NETHER -> Tag.INFINIBURN_NETHER;
+                    case THE_END -> Tag.INFINIBURN_END;
+                };
+
+                if (!infiniburn.isTagged(underBlock.getType()))
+                {
+                    spreadEvent.getSource().setType(Material.AIR);
+                }
+
+                return;
             }
 
-            return;
-        }
-
-        //never spread into a claimed area, regardless of settings
-        if (this.dataStore.getClaimAt(spreadEvent.getBlock().getLocation(), false, null) != null)
-        {
-            if (GriefPrevention.instance.config_claims_firespreads) return;
-            spreadEvent.setCancelled(true);
-
-            //if the source of the spread is not fire on netherrack, put out that source fire to save cpu cycles
-            Block source = spreadEvent.getSource();
-            if (source.getRelative(BlockFace.DOWN).getType() != Material.NETHERRACK)
+            //never spread into a claimed area, regardless of settings
+            if (this.dataStore.getClaimAt(spreadEvent.getBlock().getLocation(), false, null) != null)
             {
-                source.setType(Material.AIR);
+                if (GriefPrevention.instance.config_claims_firespreads) return;
+                spreadEvent.setCancelled(true);
+
+                //if the source of the spread is not fire on netherrack, put out that source fire to save cpu cycles
+                Block source = spreadEvent.getSource();
+                if (source.getRelative(BlockFace.DOWN).getType() != Material.NETHERRACK)
+                {
+                    source.setType(Material.AIR);
+                }
             }
         }
     }
