@@ -38,6 +38,7 @@ import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Lightable;
 import org.bukkit.block.data.type.Chest;
 import org.bukkit.block.data.type.Dispenser;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Fireball;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
@@ -1112,12 +1113,15 @@ public class BlockEventHandler implements Listener
 
 
     @EventHandler(ignoreCancelled = true)
-    public void onNetherPortalCreate(final PortalCreateEvent event)
+    public void onNetherPortalCreate(final @NotNull PortalCreateEvent event)
     {
         if (event.getReason() != PortalCreateEvent.CreateReason.NETHER_PAIR)
         {
             return;
         }
+
+        // Don't track in worlds where claims are not enabled.
+        if (!GriefPrevention.instance.claimsEnabledForWorld(event.getWorld())) return;
 
         // Ignore this event if preventNonPlayerCreatedPortals config option is disabled, and we don't know the entity.
         if (!(event.getEntity() instanceof Player) && !GriefPrevention.instance.config_claims_preventNonPlayerCreatedPortals)
@@ -1125,29 +1129,43 @@ public class BlockEventHandler implements Listener
             return;
         }
 
-        for (BlockState blockState : event.getBlocks())
+        BiPredicate<Claim, BoundingBox> predicate;
+        Entity entity = event.getEntity();
+        if (entity == null)
         {
-            Claim claim = this.dataStore.getClaimAt(blockState.getLocation(), false, null);
-            if (claim != null)
+            // No entity always means denial.
+            predicate = (claim, claimBoundingBox) -> true;
+        }
+        else if (entity instanceof Player player)
+        {
+            predicate = (claim, claimBoundingBox) ->
             {
-                if (event.getEntity() instanceof Player player)
-                {
-                    Supplier<String> noPortalReason = claim.checkPermission(player, ClaimPermission.Build, event);
+                Supplier<String> noPortalReason = claim.checkPermission(player, ClaimPermission.Build, event);
 
-                    if (noPortalReason != null)
-                    {
-                        event.setCancelled(true);
-                        GriefPrevention.sendMessage(player, TextMode.Err, noPortalReason.get());
-                        return;
-                    }
-                }
-                else
+                if (noPortalReason != null)
                 {
-                    // Cancels the event if in a claim, as we can not efficiently retrieve the person/entity who created the portal.
-                    event.setCancelled(true);
-                    return;
+                    GriefPrevention.sendMessage(player, TextMode.Err, noPortalReason.get());
+                    player.setPortalCooldown(40);
+                    return true;
                 }
-            }
+
+                return false;
+            };
+        }
+        else
+        {
+            predicate = (claim, claimBoundingBox) ->
+            {
+                // Non-player entities are denied and set on portal cooldown to prevent repeated attempts.
+                entity.setPortalCooldown(100);
+                return true;
+            };
+        }
+
+        BoundingBox box = BoundingBox.ofStates(event.getBlocks());
+        if (boxConflictsWithClaims(event.getWorld(), box, null, predicate))
+        {
+            event.setCancelled(true);
         }
     }
 }
