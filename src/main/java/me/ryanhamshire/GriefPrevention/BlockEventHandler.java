@@ -72,12 +72,12 @@ import org.bukkit.metadata.MetadataValue;
 import org.bukkit.projectiles.BlockProjectileSource;
 import org.bukkit.projectiles.ProjectileSource;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiPredicate;
 import java.util.function.Supplier;
@@ -629,26 +629,9 @@ public class BlockEventHandler implements Listener
             if (!isRetract && direction == BlockFace.DOWN) return;
         }
 
-        // Assemble list of potentially intersecting claims from chunks interacted with.
-        ArrayList<Claim> intersectable = new ArrayList<>();
-        int chunkXMax = movedBlocks.getMaxX() >> 4;
-        int chunkZMax = movedBlocks.getMaxZ() >> 4;
-
-        for (int chunkX = movedBlocks.getMinX() >> 4; chunkX <= chunkXMax; ++chunkX)
-        {
-            for (int chunkZ = movedBlocks.getMinZ() >> 4; chunkZ <= chunkZMax; ++chunkZ)
-            {
-                ArrayList<Claim> chunkClaims = dataStore.chunksToClaimsMap.get(DataStore.getChunkHash(chunkX, chunkZ));
-                if (chunkClaims == null) continue;
-
-                for (Claim claim : chunkClaims)
-                {
-                    // Ensure claim is not piston claim and is in same world.
-                    if (pistonClaim != claim && pistonBlock.getWorld().equals(claim.getLesserBoundaryCorner().getWorld()))
-                        intersectable.add(claim);
-                }
-            }
-        }
+        // Get claims in the chunks intersecting with the moved blocks.
+        Set<Claim> intersectable = dataStore.getChunkClaims(pistonBlock.getWorld(), movedBlocks);
+        if (pistonClaim != null) intersectable.remove(pistonClaim);
 
         BiPredicate<Claim, BoundingBox> intersectionHandler;
         final Claim finalPistonClaim = pistonClaim;
