@@ -71,6 +71,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.MetadataValue;
 import org.bukkit.projectiles.BlockProjectileSource;
 import org.bukkit.projectiles.ProjectileSource;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
 import java.util.EnumSet;
@@ -629,73 +631,138 @@ public class BlockEventHandler implements Listener
             if (!isRetract && direction == BlockFace.DOWN) return;
         }
 
-        // Get claims in the chunks intersecting with the moved blocks.
-        Set<Claim> intersectable = dataStore.getChunkClaims(pistonBlock.getWorld(), movedBlocks);
-        if (pistonClaim != null) intersectable.remove(pistonClaim);
-
         BiPredicate<Claim, BoundingBox> intersectionHandler;
-        final Claim finalPistonClaim = pistonClaim;
-
-        // Fast mode: Bounding box intersection always causes a conflict, even if blocks do not conflict.
         if (pistonMode == PistonMode.EVERYWHERE_SIMPLE)
         {
-            intersectionHandler = (claim, claimBoundingBox) ->
-            {
-                // If owners are different, cancel.
-                if (finalPistonClaim == null || !Objects.equals(finalPistonClaim.getOwnerID(), claim.getOwnerID()))
-                {
-                    event.setCancelled(true);
-                    return true;
-                }
-
-                // Otherwise, proceed to next claim.
-                return false;
-            };
+            // Fast mode: Bounding box intersection always causes a conflict, even if blocks do not conflict.
+            intersectionHandler = denyOtherOwnerIntersection(pistonClaim);
         }
-        // Precise mode: Bounding box intersection may not yield a conflict. Individual blocks must be considered.
         else
         {
-            // Set up list of affected blocks.
-            HashSet<Block> checkBlocks = new HashSet<>(blocks);
-
-            // Add all blocks that will be occupied after the shift.
-            for (Block block : blocks)
-                if (block.getPistonMoveReaction() != PistonMoveReaction.BREAK)
-                    checkBlocks.add(block.getRelative(direction));
-
-            intersectionHandler = (claim, claimBoundingBox) ->
-            {
-                // Ensure that the claim contains an affected block.
-                if (checkBlocks.stream().noneMatch(claimBoundingBox::contains)) return false;
-
-                // If pushing this block will change ownership, cancel the event and take away the piston (for performance reasons).
-                if (finalPistonClaim == null || !Objects.equals(finalPistonClaim.getOwnerID(), claim.getOwnerID()))
-                {
-                    event.setCancelled(true);
-                    if (GriefPrevention.instance.config_pistonExplosionSound)
-                    {
-                        pistonBlock.getWorld().createExplosion(pistonBlock.getLocation(), 0);
-                    }
-                    pistonBlock.getWorld().dropItem(pistonBlock.getLocation(), new ItemStack(event.isSticky() ? Material.STICKY_PISTON : Material.PISTON));
-                    pistonBlock.setType(Material.AIR);
-                    return true;
-                }
-
-                // Otherwise, proceed to next claim.
-                return false;
-            };
+            // Precise mode: Bounding box intersection may not yield a conflict. Individual blocks must be considered.
+            intersectionHandler = precisePistonIntersection(pistonBlock, pistonClaim, blocks, event);
         }
 
-        for (Claim claim : intersectable)
+        if (boxConflictsWithClaims(pistonBlock.getWorld(), movedBlocks, pistonClaim, intersectionHandler))
+        {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
+     * Check if claims conflict with a given BoundingBox.
+     *
+     * @param world the world
+     * @param boundingBox the area that may intersect a claim
+     * @param initiatingClaim the claim from which the action was initiated
+     * @param precisePredicate a more accurate measure determining if a conflict actually occurs
+     * @return true if a claim is determined to be intersecting with the bounding box
+     */
+    private boolean boxConflictsWithClaims(
+            @NotNull World world,
+            @NotNull BoundingBox boundingBox,
+            @Nullable Claim initiatingClaim,
+            @NotNull BiPredicate<@NotNull Claim, @NotNull BoundingBox> precisePredicate)
+    {
+        // Check potentially intersecting claims from chunks interacted with.
+        Set<Claim> chunkClaims = dataStore.getChunkClaims(world, boundingBox);
+        if (initiatingClaim != null)
+        {
+            chunkClaims.remove(initiatingClaim);
+        }
+
+        for (Claim claim : chunkClaims)
         {
             BoundingBox claimBoundingBox = new BoundingBox(claim);
 
             // Ensure claim intersects with block bounding box.
-            if (!claimBoundingBox.intersects(movedBlocks)) continue;
+            if (!claimBoundingBox.intersects(boundingBox)) continue;
 
             // Do additional mode-based handling.
-            if (intersectionHandler.test(claim, claimBoundingBox)) return;
+            if (precisePredicate.test(claim, claimBoundingBox)) return true;
         }
+
+        return false;
+    }
+
+    /**
+     * Any conflict with another user's claim is a conflict.
+     *
+     * @param initiatingClaim the claim from which the move was initiated
+     * @return a {@link BiPredicate} accepting a {@link Claim} and {@link BoundingBox}
+     */
+    private @NotNull BiPredicate<@NotNull Claim, @NotNull BoundingBox> denyOtherOwnerIntersection(
+            @Nullable Claim initiatingClaim)
+    {
+        return (claim, claimBoundingBox) ->
+        {
+            // If owners are different, cancel.
+            return initiatingClaim == null || !Objects.equals(initiatingClaim.getOwnerID(), claim.getOwnerID());
+        };
+    }
+
+    /**
+     * Precise mode: Individual blocks are considered when determining if a conflict occurs.
+     *
+     * @param pistonBlock the piston block
+     * @param pistonClaim the claim that the piston is in
+     * @param blocks the affected blocks
+     * @param event the event
+     * @return a {@link BiPredicate} accepting a {@link Claim} and {@link BoundingBox}
+     */
+    private @NotNull BiPredicate<@NotNull Claim, @NotNull BoundingBox> precisePistonIntersection(
+            @NotNull Block pistonBlock,
+            @Nullable Claim pistonClaim,
+            @NotNull Collection<@NotNull Block> blocks,
+            @NotNull BlockPistonEvent event)
+    {
+        // Set up list of affected blocks.
+        HashSet<Block> checkBlocks = new HashSet<>(blocks);
+
+        // Add all blocks that will be occupied after the shift.
+        for (Block block : blocks)
+        {
+            if (block.getPistonMoveReaction() != PistonMoveReaction.BREAK)
+            {
+                checkBlocks.add(block.getRelative(event.getDirection()));
+            }
+        }
+
+        return (claim, claimBoundingBox) ->
+        {
+            // Ensure that the claim contains an affected block.
+            if (containsNone(claimBoundingBox, checkBlocks)) return false;
+
+            // If pushing this block will change ownership, "explode" the piston for performance reasons.
+            if (pistonClaim == null || !Objects.equals(pistonClaim.getOwnerID(), claim.getOwnerID()))
+            {
+                if (GriefPrevention.instance.config_pistonExplosionSound)
+                {
+                    pistonBlock.getWorld().createExplosion(pistonBlock.getLocation(), 0);
+                }
+                pistonBlock.getWorld().dropItem(
+                        pistonBlock.getLocation(),
+                        new ItemStack(event.isSticky() ? Material.STICKY_PISTON : Material.PISTON));
+                pistonBlock.setType(Material.AIR);
+                return true;
+            }
+
+            // Otherwise, proceed to next claim.
+            return false;
+        };
+    }
+
+    private boolean containsNone(@NotNull BoundingBox boundingBox, @NotNull Collection<@NotNull Block> blocks)
+    {
+        for (Block block : blocks)
+        {
+            if (boundingBox.contains(block))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     //blocks are ignited ONLY by flint and steel (not by being near lava, open flames, etc), unless configured otherwise
