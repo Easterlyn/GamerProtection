@@ -21,7 +21,7 @@ public class MetricsHandler
 
         try
         {
-            addSimplePie("custom_build", plugin.getDescription().getVersion().equals("15.2.2"));
+            addSimplePie("custom_build", true);
             addSimplePie("bukkit_impl", plugin.getServer().getVersion().split("-")[1]);
         }
         catch (Throwable ignored) {}
