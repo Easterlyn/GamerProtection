@@ -1038,7 +1038,7 @@ public class BlockEventHandler implements Listener
     }
 
     @EventHandler(ignoreCancelled = true)
-    public void onTreeGrow(StructureGrowEvent growEvent)
+    public void onTreeGrow(@NotNull StructureGrowEvent growEvent)
     {
         //only take these potentially expensive steps if configured to do so
         if (!GriefPrevention.instance.config_limitTreeGrowth) return;
@@ -1047,37 +1047,18 @@ public class BlockEventHandler implements Listener
         if (!GriefPrevention.instance.claimsEnabledForWorld(growEvent.getWorld())) return;
 
         Location rootLocation = growEvent.getLocation();
-        Claim rootClaim = this.dataStore.getClaimAt(rootLocation, false, null);
-        String rootOwnerName = null;
+        Claim rootClaim = this.dataStore.getClaimAt(rootLocation, false, true, null);
 
-        //who owns the spreading block, if anyone?
-        if (rootClaim != null)
+        // If the tree is in an admin claim, it has permission to grow wherever it wants to.
+        if (rootClaim != null && rootClaim.isAdminClaim()) return;
+
+        BoundingBox box = BoundingBox.ofStates(growEvent.getBlocks());
+        if (boxConflictsWithClaims(growEvent.getWorld(), box, rootClaim, denyOtherOwnerIntersection(rootClaim)))
         {
-            //tree growth in subdivisions is dependent on who owns the top level claim
-            if (rootClaim.parent != null) rootClaim = rootClaim.parent;
-
-            //if an administrative claim, just let the tree grow where it wants
-            if (rootClaim.isAdminClaim()) return;
-
-            //otherwise, note the owner of the claim
-            rootOwnerName = rootClaim.getOwnerName();
-        }
-
-        //for each block growing
-        for (int i = 0; i < growEvent.getBlocks().size(); i++)
-        {
-            BlockState block = growEvent.getBlocks().get(i);
-            Claim blockClaim = this.dataStore.getClaimAt(block.getLocation(), false, rootClaim);
-
-            //if it's growing into a claim
-            if (blockClaim != null)
-            {
-                //if there's no owner for the new tree, or the owner for the new tree is different from the owner of the claim
-                if (rootOwnerName == null || !rootOwnerName.equals(blockClaim.getOwnerName()))
-                {
-                    growEvent.getBlocks().remove(i--);
-                }
-            }
+            growEvent.setCancelled(true);
+            // Break the initiator to prevent repeat checks. As these are saplings, chorus flowers, etc. no special tool
+            // should be required to return the sapling in the event that this is unintentional grief.
+            rootLocation.getBlock().breakNaturally();
         }
     }
 
